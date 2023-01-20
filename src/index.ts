@@ -1,3 +1,5 @@
+import * as http from 'http';
+import * as express from 'express';
 import * as io from 'socket.io';
 import * as prom from 'prom-client';
 
@@ -8,6 +10,7 @@ export function metrics(ioServer: io.Server, options?: IMetricsOptions) {
 export interface IMetricsOptions {
   port?: number | string;
   path?: string;
+  createServer?: boolean;
   collectDefaultMetrics?: boolean;
   checkForNewNamespaces?: boolean;
 }
@@ -29,6 +32,9 @@ export class SocketIOMetrics {
 
   private ioServer: io.Server;
 
+  private express: express.Express;
+  private expressServer: http.Server;
+
   private options: IMetricsOptions;
 
   private boundNamespaces = new Set();
@@ -36,6 +42,7 @@ export class SocketIOMetrics {
   private defaultOptions: IMetricsOptions = {
     port: 9090,
     path: '/metrics',
+    createServer: true,
     collectDefaultMetrics: false,
     checkForNewNamespaces: true,
   };
@@ -53,6 +60,32 @@ export class SocketIOMetrics {
         register: this.register,
       });
     }
+
+    if (this.options.createServer) {
+      this.start();
+    }
+  }
+
+  public start() {
+    if (!this.expressServer || !this.expressServer.listening) {
+      this.initServer();
+    }
+  }
+
+  public async close() {
+    return this.expressServer.close();
+  }
+
+  private initServer() {
+    this.express = express();
+    this.expressServer = this.express.listen(this.options.port);
+    this.express.get(
+      this.options.path,
+      (req: express.Request, res: express.Response) => {
+        res.set('Content-Type', this.register.contentType);
+        res.end(this.register.metrics());
+      },
+    );
   }
 
   private initMetrics() {
